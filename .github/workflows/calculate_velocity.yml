@@ -1,0 +1,63 @@
+name: Calculate Upward Velocity
+
+on:
+  push:
+    paths:
+      - 'upward_ledger.csv' # 仅在修改账本时触发
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Calculate Score
+        run: |
+          python - <<EOF
+          import csv
+          from datetime import datetime
+
+          try:
+              with open('upward_ledger.csv', mode='r', encoding='utf-8') as f:
+                  reader = list(csv.DictReader(f))
+                  
+                  # 统计完成的任务总分
+                  total_cu = sum(float(row['CU_Value']) for row in reader if row['Status'] == 'Completed')
+                  
+                  # 计算活跃天数 (唯一日期数)
+                  dates = {row['Date'] for row in reader if row['Date']}
+                  days_active = len(dates) if dates else 1
+                  
+                  # 一致性逻辑：如果过去7天都有记录，乘数为1.2，否则0.8
+                  consistency = 1.2 if days_active >= 5 else 0.8
+                  
+                  velocity = (total_cu / days_active) * consistency
+                  
+                  result = f"### 🚀 当前上升势能统计\n- **总贡献 (Total CU)**: {total_cu}\n- **活跃天数**: {days_active}\n- **上升速度 ($V_u$):** {velocity:.2f}\n- **最后更新时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                  
+                  # 将结果写入一个临时文件
+                  with open('velocity_report.md', 'w') as rf:
+                      rf.write(result)
+                  print(f"Calculation successful: Vu = {velocity:.2f}")
+          except Exception as e:
+              print(f"Error: {e}")
+          EOF
+
+      - name: Update README
+        run: |
+          # 简单的逻辑：将结果追加到 README 或替换特定标记
+          echo -e "\n$(cat velocity_report.md)" >> README.md
+          
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git commit -m "Update Velocity Score [skip ci]" || exit 0
+          git push
